@@ -13,7 +13,10 @@ export async function runRerunCiCommand(
     head_sha: pull.headSha,
   });
   const failed = runs.filter(
-    (run) => run.conclusion === "failure" || run.conclusion === "timed_out" || run.conclusion === "cancelled",
+    (run) =>
+      run.conclusion === "failure" ||
+      run.conclusion === "timed_out" ||
+      run.conclusion === "cancelled",
   );
 
   if (failed.length === 0) {

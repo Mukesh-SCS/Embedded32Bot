@@ -102,7 +102,9 @@ async function executeCommand(
     return `Unexpected arguments for \`${command}\`.\n\n${renderHelp()}`;
   }
   if (command === "help") {
-    return isHelpCommand(parsed) ? renderHelp() : `Unexpected arguments for \`help\`.\n\n${renderHelp()}`;
+    return isHelpCommand(parsed)
+      ? renderHelp()
+      : `Unexpected arguments for \`help\`.\n\n${renderHelp()}`;
   }
 
   const permission = await getCollaboratorPermission(context.octokit, {

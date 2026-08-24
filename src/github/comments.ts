@@ -1,5 +1,6 @@
 import { BOT_LOGIN, STATUS_COMMENT_MARKER } from "../config.js";
 import type { GitHubClient, RepoRef } from "./client.js";
+import { stopWhenShortPage } from "./paginate.js";
 
 export type IssueComment = {
   id: number;
@@ -40,12 +41,16 @@ export async function listIssueComments(
   octokit: GitHubClient,
   target: RepoRef & { issue_number: number },
 ): Promise<IssueComment[]> {
-  const comments = await octokit.paginate(octokit.rest.issues.listComments, {
-    owner: target.owner,
-    repo: target.repo,
-    issue_number: target.issue_number,
-    per_page: 100,
-  });
+  const comments = await octokit.paginate(
+    octokit.rest.issues.listComments,
+    {
+      owner: target.owner,
+      repo: target.repo,
+      issue_number: target.issue_number,
+      per_page: 100,
+    },
+    stopWhenShortPage(),
+  );
   return comments.map((comment) => ({
     id: comment.id,
     body: comment.body ?? "",

@@ -1,7 +1,26 @@
 import { describe, expect, test } from "vitest";
 import { diffBotLabels, statusLabelForState } from "../src/policy/label-sync.js";
 import { canonicalizeLabel, isBotManagedLabel, parseLabelArgument } from "../src/policy/labels.js";
+import { evaluateChecks, REQUIRED_CHECK_NAMES } from "../src/policy/required-checks.js";
 import { desiredBotLabels } from "../src/services/pr-analysis.js";
+
+const passingChecks = evaluateChecks(
+  REQUIRED_CHECK_NAMES.map((name, id) => ({
+    id: id + 1,
+    name,
+    status: "completed",
+    conclusion: "success",
+  })),
+);
+
+const failedChecks = evaluateChecks(
+  REQUIRED_CHECK_NAMES.map((name, id) => ({
+    id: id + 1,
+    name,
+    status: "completed",
+    conclusion: name === "Verify (Node 22)" ? "failure" : "success",
+  })),
+);
 
 describe("label helpers", () => {
   test("identifies bot-managed namespaces", () => {
@@ -19,9 +38,7 @@ describe("label helpers", () => {
   });
 
   test("adds desired bot labels and removes stale ones", () => {
-    expect(
-      diffBotLabels(["area: docs", "area: cli"], ["area: docs", "risk: low"]),
-    ).toEqual({
+    expect(diffBotLabels(["area: docs", "area: cli"], ["area: docs", "risk: low"])).toEqual({
       add: ["risk: low"],
       remove: ["area: cli"],
     });
@@ -36,8 +53,8 @@ describe("label helpers", () => {
       statusLabelForState({
         blocked: false,
         changesRequested: false,
-        checks: { passed: 0, pending: 0, failed: 1, names: ["CI"] },
-        mergeDecision: { allowed: false, reasons: ["required CI failed"] },
+        checks: failedChecks,
+        mergeDecision: { allowed: false, reasons: ["required check failed: Verify (Node 22)"] },
       }),
     ).toBe("status: ci-failed");
   });
@@ -45,47 +62,59 @@ describe("label helpers", () => {
 
 describe("desired bot labels", () => {
   test("does not attach status labels after merge", () => {
-    const labels = desiredBotLabels(
-      {
-        pull: {
-          number: 1,
-          nodeId: "PR_1",
-          title: "docs",
-          body: "",
-          state: "closed",
-          draft: false,
-          merged: true,
-          mergeable: true,
-          mergeableState: "clean",
-          baseBranch: "main",
-          headSha: "abc",
-          authorLogin: "author",
-          authorType: "User",
-          htmlUrl: "https://github.com/Mukesh-SCS/Embedded32/pull/1",
-          mergeCommitSha: "def",
-          labels: ["status: ready-to-merge"],
-        },
-        classification: {
-          areas: ["area: docs"],
-          type: "type: docs",
-          risk: "low",
-          release: "release: none",
-          unclassifiedPaths: [],
-        },
-        template: [],
-        checks: { passed: 0, pending: 0, failed: 0, names: [] },
-        reviews: {
-          humanApprovals: 1,
-          changesRequested: false,
-          staleApprovals: false,
-          latestHumanState: "APPROVED",
-        },
-        mergeDecision: { allowed: false, reasons: ["pull request is already merged"] },
-        labels: ["status: ready-to-merge"],
-      },
-      ["status: ready-to-merge", "area: docs"],
-    );
+    const labels = desiredBotLabels(closedAnalysis(true), ["status: ready-to-merge", "area: docs"]);
+    expect(labels).toContain("area: docs");
+    expect(labels.some((name) => name.startsWith("status:"))).toBe(false);
+  });
+
+  test("does not attach workflow status labels to a closed unmerged pull request", () => {
+    const labels = desiredBotLabels(closedAnalysis(false), ["status: needs-review", "area: docs"]);
     expect(labels).toContain("area: docs");
     expect(labels.some((name) => name.startsWith("status:"))).toBe(false);
   });
 });
+
+function closedAnalysis(merged: boolean) {
+  return {
+    pull: {
+      number: 1,
+      nodeId: "PR_1",
+      title: "docs",
+      body: "",
+      state: "closed",
+      draft: false,
+      merged,
+      mergeable: true,
+      mergeableState: "clean",
+      baseBranch: "main",
+      headSha: "abc",
+      authorLogin: "author",
+      authorType: "User",
+      htmlUrl: "https://github.com/Mukesh-SCS/Embedded32/pull/1",
+      mergeCommitSha: merged ? "def" : null,
+      labels: ["status: ready-to-merge"],
+    },
+    classification: {
+      areas: ["area: docs" as const],
+      type: "type: docs" as const,
+      risk: "low" as const,
+      release: "release: none" as const,
+      unclassifiedPaths: [],
+    },
+    template: [],
+    checks: passingChecks,
+    reviews: {
+      humanApprovals: 1,
+      trustedApprovals: 1,
+      untrustedApprovals: 0,
+      changesRequested: false,
+      staleApprovals: false,
+      latestHumanState: "APPROVED",
+    },
+    mergeDecision: {
+      allowed: false,
+      reasons: [merged ? "pull request is already merged" : "pull request is closed"],
+    },
+    labels: ["status: ready-to-merge"],
+  };
+}

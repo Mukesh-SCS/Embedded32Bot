@@ -1,5 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { classifyAreas, classifyPullRequest, dependabotSemver } from "../src/policy/classification.js";
+import {
+  classifyAreas,
+  classifyPullRequest,
+  dependabotSemver,
+} from "../src/policy/classification.js";
 
 describe("area classification", () => {
   test("maps a single package path", () => {

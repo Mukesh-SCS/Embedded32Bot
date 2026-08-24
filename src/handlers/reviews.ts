@@ -5,7 +5,11 @@ import { refreshPullRequest } from "../services/pr-analysis.js";
 
 export function registerReviewHandlers(app: Probot): void {
   app.on(
-    ["pull_request_review.submitted", "pull_request_review.edited", "pull_request_review.dismissed"],
+    [
+      "pull_request_review.submitted",
+      "pull_request_review.edited",
+      "pull_request_review.dismissed",
+    ],
     async (context) => {
       const { repository, pull_request: pull } = context.payload;
       if (repository.owner.login !== TARGET_OWNER || repository.name !== TARGET_REPOSITORY) {

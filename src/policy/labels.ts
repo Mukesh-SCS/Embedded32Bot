@@ -88,7 +88,9 @@ export function canonicalizeLabel(raw: string): StructuredLabel | undefined {
   return undefined;
 }
 
-export function parseLabelArgument(raw: string): { action: "add" | "remove"; label: StructuredLabel } | undefined {
+export function parseLabelArgument(
+  raw: string,
+): { action: "add" | "remove"; label: StructuredLabel } | undefined {
   const trimmed = raw.trim();
   if (trimmed.length === 0) {
     return undefined;
@@ -106,4 +108,12 @@ export function parseLabelArgument(raw: string): { action: "add" | "remove"; lab
 
 export function riskLabel(level: "low" | "medium" | "high" | "critical"): RiskLabel {
   return `risk: ${level}`;
+}
+
+export const HUMAN_CONTROLLED_LABELS = ["status: blocked"] as const;
+
+export type HumanControlledLabel = (typeof HUMAN_CONTROLLED_LABELS)[number];
+
+export function isHumanControlledLabel(name: string): boolean {
+  return HUMAN_CONTROLLED_LABELS.includes(name as HumanControlledLabel);
 }

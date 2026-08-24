@@ -2,7 +2,13 @@ import nock from "nock";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { STATUS_COMMENT_MARKER, TARGET_OWNER, TARGET_REPOSITORY } from "../src/config.js";
 import { issueCommentCreated, issueCommentEvent } from "./fixtures/issue-comment.js";
-import { captureIssueComments, HEAD_SHA, nockAnalysis, nockPermission } from "./helpers/github.js";
+import {
+  captureIssueComments,
+  HEAD_SHA,
+  nockAnalysis,
+  nockPermission,
+  passingRequiredChecks,
+} from "./helpers/github.js";
 import { createTestProbot } from "./helpers/probot.js";
 import type { Probot } from "probot";
 
@@ -23,7 +29,9 @@ describe("privileged commands", () => {
   test("rejects merge when CI is failed", async () => {
     nockPermission("contributor", "admin");
     nockAnalysis({
-      checks: [{ name: "Verify (Node 22)", status: "completed", conclusion: "failure" }],
+      checks: passingRequiredChecks().map((check) =>
+        check.name === "Verify (Node 22)" ? { ...check, conclusion: "failure" } : check,
+      ),
       reviews: [{ user: "Mukesh-SCS", state: "APPROVED", commit_id: HEAD_SHA }],
     });
     const comments = captureIssueComments();
@@ -32,7 +40,9 @@ describe("privileged commands", () => {
       issueCommentEvent("merge-failed-ci", issueCommentCreated({ body: "@embedded32bot merge" })),
     );
     expect(comments.some((body) => body.includes("DO NOT MERGE"))).toBe(true);
-    expect(comments.some((body) => body.includes("required CI failed"))).toBe(true);
+    expect(comments.some((body) => body.includes("required check failed: Verify (Node 22)"))).toBe(
+      true,
+    );
   });
 
   test("merges when gates pass", async () => {
@@ -41,10 +51,12 @@ describe("privileged commands", () => {
       reviews: [{ user: "Mukesh-SCS", state: "APPROVED", commit_id: HEAD_SHA }],
     });
     nock("https://api.github.com")
+      .persist()
       .get(`/repos/${TARGET_OWNER}/${TARGET_REPOSITORY}`)
       .query(true)
       .reply(200, { allow_squash_merge: true, allow_merge_commit: true });
     const merge = nock("https://api.github.com")
+      .persist()
       .put(`/repos/${TARGET_OWNER}/${TARGET_REPOSITORY}/pulls/42/merge`)
       .query(true)
       .reply(200, (_uri, requestBody) => {
@@ -59,6 +71,20 @@ describe("privileged commands", () => {
     );
     expect(merge.isDone()).toBe(true);
     expect(comments.some((body) => body.includes("Merged PR #42"))).toBe(true);
+  });
+
+  test("rejects merge of a closed unmerged pull request", async () => {
+    nockPermission("contributor", "admin");
+    nockAnalysis({
+      pull: { state: "closed", merged: false },
+      reviews: [{ user: "Mukesh-SCS", state: "APPROVED", commit_id: HEAD_SHA }],
+    });
+    const comments = captureIssueComments();
+
+    await probot.receive(
+      issueCommentEvent("merge-closed", issueCommentCreated({ body: "@embedded32bot merge" })),
+    );
+    expect(comments.some((body) => body.includes("pull request is closed"))).toBe(true);
   });
 
   test("does not merge twice", async () => {
@@ -147,7 +173,7 @@ describe("privileged commands", () => {
     expect(comments.filter((body) => body.includes(STATUS_COMMENT_MARKER)).length).toBe(1);
   });
 
-  test("adds an approved label", async () => {
+  test("adds the human-controlled blocked label", async () => {
     nockPermission("contributor", "write");
     nockAnalysis();
     const comments = captureIssueComments();
@@ -155,10 +181,23 @@ describe("privileged commands", () => {
     await probot.receive(
       issueCommentEvent(
         "label-add",
+        issueCommentCreated({ body: "@embedded32bot label status:blocked" }),
+      ),
+    );
+    expect(comments.some((body) => body.includes("Added `status: blocked`"))).toBe(true);
+  });
+
+  test("rejects manual changes to classification labels", async () => {
+    nockPermission("contributor", "write");
+    const comments = captureIssueComments();
+
+    await probot.receive(
+      issueCommentEvent(
+        "label-owned",
         issueCommentCreated({ body: "@embedded32bot label area:j1939" }),
       ),
     );
-    expect(comments.some((body) => body.includes("Added `area: j1939`"))).toBe(true);
+    expect(comments.some((body) => body.includes("owned by automatic classification"))).toBe(true);
   });
 
   test("rejects an unknown label", async () => {
@@ -179,7 +218,12 @@ describe("privileged commands", () => {
       .query(true)
       .reply(200, {
         workflow_runs: [
-          { id: 55, status: "completed", conclusion: "failure", html_url: "https://example.test/55" },
+          {
+            id: 55,
+            status: "completed",
+            conclusion: "failure",
+            html_url: "https://example.test/55",
+          },
         ],
       });
     const rerun = nock("https://api.github.com")
@@ -207,5 +251,79 @@ describe("privileged commands", () => {
       issueCommentEvent("rerun-none", issueCommentCreated({ body: "@embedded32bot rerun-ci" })),
     );
     expect(comments.some((body) => body.includes("No failed workflow runs"))).toBe(true);
+  });
+
+  test("rejects revert on an unmerged pull request", async () => {
+    nockPermission("contributor", "admin");
+    nockAnalysis();
+    const comments = captureIssueComments();
+
+    await probot.receive(
+      issueCommentEvent("revert-open", issueCommentCreated({ body: "@embedded32bot revert" })),
+    );
+    expect(comments.some((body) => body.includes("Cannot revert"))).toBe(true);
+    expect(comments.some((body) => body.includes("pull request is not merged"))).toBe(true);
+  });
+
+  test("reports when GraphQL returns no revert pull request", async () => {
+    nockPermission("contributor", "admin");
+    nockAnalysis({
+      pull: { merged: true, mergeCommitSha: "cafebabe", title: "Fix filter" },
+    });
+    nock("https://api.github.com")
+      .persist()
+      .get(`/repos/${TARGET_OWNER}/${TARGET_REPOSITORY}/pulls`)
+      .query(true)
+      .reply(200, []);
+    nock("https://api.github.com")
+      .post("/graphql")
+      .reply(200, {
+        data: {
+          revertPullRequest: {
+            revertPullRequest: null,
+          },
+        },
+      });
+    const comments = captureIssueComments();
+
+    await probot.receive(
+      issueCommentEvent("revert-empty", issueCommentCreated({ body: "@embedded32bot revert" })),
+    );
+    expect(comments.some((body) => body.includes("GitHub request failed"))).toBe(true);
+  });
+
+  test("reports a GitHub conflict while reverting", async () => {
+    nockPermission("contributor", "admin");
+    nockAnalysis({
+      pull: { merged: true, mergeCommitSha: "cafebabe", title: "Fix filter" },
+    });
+    nock("https://api.github.com")
+      .persist()
+      .get(`/repos/${TARGET_OWNER}/${TARGET_REPOSITORY}/pulls`)
+      .query(true)
+      .reply(200, []);
+    nock("https://api.github.com").post("/graphql").reply(409, { message: "conflict" });
+    const comments = captureIssueComments();
+
+    await probot.receive(
+      issueCommentEvent("revert-conflict", issueCommentCreated({ body: "@embedded32bot revert" })),
+    );
+    expect(comments.some((body) => body.includes("409"))).toBe(true);
+  });
+
+  test("rejects merge while mergeability is still being calculated", async () => {
+    nockPermission("contributor", "admin");
+    nockAnalysis({
+      pull: { mergeable: null, mergeableState: "unknown" },
+      reviews: [{ user: "Mukesh-SCS", state: "APPROVED", commit_id: HEAD_SHA }],
+    });
+    const comments = captureIssueComments();
+
+    await probot.receive(
+      issueCommentEvent("merge-unknown", issueCommentCreated({ body: "@embedded32bot merge" })),
+    );
+    expect(comments.some((body) => body.includes("mergeability is still being calculated"))).toBe(
+      true,
+    );
   });
 });

@@ -13,6 +13,13 @@ export type TemplateSectionResult = {
   hasContent: boolean;
 };
 
+const TEMPLATE_BOILERPLATE_LINES = new Set([
+  "```",
+  "```bash",
+  "npm run verify",
+  "npm run test:labs",
+]);
+
 export function validatePrTemplate(body: string): TemplateSectionResult[] {
   return EXPECTED_SECTIONS.map((name) => {
     const section = extractSection(body, name);
@@ -41,7 +48,8 @@ function hasMeaningfulContent(section: string): boolean {
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
-    .filter((line) => !/^- \[ \]/.test(line));
+    .filter((line) => !/^- \[ \]/.test(line))
+    .filter((line) => !TEMPLATE_BOILERPLATE_LINES.has(line));
 
-  return lines.some((line) => line !== "```" && line !== "```bash");
+  return lines.length > 0;
 }

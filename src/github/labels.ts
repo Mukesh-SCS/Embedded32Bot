@@ -1,15 +1,20 @@
 import type { GitHubClient, RepoRef } from "./client.js";
+import { stopWhenShortPage } from "./paginate.js";
 
 export async function listIssueLabels(
   octokit: GitHubClient,
   target: RepoRef & { issue_number: number },
 ): Promise<string[]> {
-  const labels = await octokit.paginate(octokit.rest.issues.listLabelsOnIssue, {
-    owner: target.owner,
-    repo: target.repo,
-    issue_number: target.issue_number,
-    per_page: 100,
-  });
+  const labels = await octokit.paginate(
+    octokit.rest.issues.listLabelsOnIssue,
+    {
+      owner: target.owner,
+      repo: target.repo,
+      issue_number: target.issue_number,
+      per_page: 100,
+    },
+    stopWhenShortPage(),
+  );
   return labels.map((label) => label.name);
 }
 

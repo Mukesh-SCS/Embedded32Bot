@@ -6,25 +6,36 @@ export async function runMergeCommand(
   octokit: GitHubClient,
   target: RepoRef & { pull_number: number },
 ): Promise<string> {
-  const analysis = await analyzePullRequest(octokit, target);
-  if (analysis.pull.merged) {
-    return `PR #${analysis.pull.number} is already merged.`;
+  const first = await analyzePullRequest(octokit, target);
+  if (first.pull.merged) {
+    return `PR #${first.pull.number} is already merged.`;
   }
-
-  const decision = analysis.mergeDecision;
-  if (!decision.allowed) {
-    return ["DO NOT MERGE", "", "Blockers:", ...decision.reasons.map((reason) => `- ${reason}`)].join(
-      "\n",
-    );
+  if (!first.mergeDecision.allowed) {
+    return denyMerge(first.mergeDecision.reasons);
   }
 
   const mergeMethod = await getRepositoryMergeMethods(octokit, target);
+  const latest = await analyzePullRequest(octokit, target);
+  if (latest.pull.headSha !== first.pull.headSha) {
+    return denyMerge(["pull request head SHA changed during merge evaluation"]);
+  }
+  if (latest.pull.merged) {
+    return `PR #${latest.pull.number} is already merged.`;
+  }
+  if (!latest.mergeDecision.allowed) {
+    return denyMerge(latest.mergeDecision.reasons);
+  }
+
   await mergePullRequest(octokit, {
     owner: target.owner,
     repo: target.repo,
     pull_number: target.pull_number,
-    sha: analysis.pull.headSha,
+    sha: latest.pull.headSha,
     merge_method: mergeMethod,
   });
-  return `Merged PR #${analysis.pull.number} with ${mergeMethod} at \`${analysis.pull.headSha.slice(0, 12)}\`.`;
+  return `Merged PR #${latest.pull.number} with ${mergeMethod} at \`${latest.pull.headSha.slice(0, 12)}\`.`;
+}
+
+function denyMerge(reasons: readonly string[]): string {
+  return ["DO NOT MERGE", "", "Blockers:", ...reasons.map((reason) => `- ${reason}`)].join("\n");
 }

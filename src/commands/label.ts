@@ -1,7 +1,6 @@
 import type { GitHubClient, RepoRef } from "../github/client.js";
 import { addIssueLabels, listIssueLabels, removeIssueLabel } from "../github/labels.js";
-import { parseLabelArgument } from "../policy/labels.js";
-import { STRUCTURED_LABELS } from "../policy/labels.js";
+import { isHumanControlledLabel, parseLabelArgument, STRUCTURED_LABELS } from "../policy/labels.js";
 
 export async function runLabelCommand(
   octokit: GitHubClient,
@@ -12,8 +11,16 @@ export async function runLabelCommand(
   if (!parsed) {
     return [
       "Unknown or missing label.",
-      "Use an approved taxonomy label such as `area: j1939` or `-area: j1939`.",
-      `Allowed labels: ${STRUCTURED_LABELS.join(", ")}`,
+      "Manual labels are limited to human-controlled labels such as `status: blocked`.",
+      `Known taxonomy labels: ${STRUCTURED_LABELS.join(", ")}`,
+    ].join("\n");
+  }
+
+  if (!isHumanControlledLabel(parsed.label)) {
+    return [
+      `\`${parsed.label}\` is owned by automatic classification.`,
+      "The `label` command can only add or remove human-controlled labels such as `status: blocked`.",
+      "Use `@embedded32bot recheck` to refresh classification and workflow status labels.",
     ].join("\n");
   }
 

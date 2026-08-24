@@ -1,5 +1,6 @@
 import type { ChangedFile } from "../policy/classification.js";
 import type { GitHubClient, RepoRef } from "./client.js";
+import { stopWhenShortPage } from "./paginate.js";
 
 export type PullRequestData = {
   number: number;
@@ -55,12 +56,16 @@ export async function listPullRequestFiles(
   octokit: GitHubClient,
   target: RepoRef & { pull_number: number },
 ): Promise<ChangedFile[]> {
-  const files = await octokit.paginate(octokit.rest.pulls.listFiles, {
-    owner: target.owner,
-    repo: target.repo,
-    pull_number: target.pull_number,
-    per_page: 100,
-  });
+  const files = await octokit.paginate(
+    octokit.rest.pulls.listFiles,
+    {
+      owner: target.owner,
+      repo: target.repo,
+      pull_number: target.pull_number,
+      per_page: 100,
+    },
+    stopWhenShortPage(),
+  );
   return files.map((file) => ({
     filename: file.filename,
     previousFilename: file.previous_filename ?? undefined,
@@ -100,12 +105,16 @@ export async function listOpenPullRequests(
   octokit: GitHubClient,
   target: RepoRef,
 ): Promise<{ number: number; title: string; body: string; headRef: string }[]> {
-  const pulls = await octokit.paginate(octokit.rest.pulls.list, {
-    owner: target.owner,
-    repo: target.repo,
-    state: "open",
-    per_page: 100,
-  });
+  const pulls = await octokit.paginate(
+    octokit.rest.pulls.list,
+    {
+      owner: target.owner,
+      repo: target.repo,
+      state: "open",
+      per_page: 100,
+    },
+    stopWhenShortPage(),
+  );
   return pulls.map((pull) => ({
     number: pull.number,
     title: pull.title,

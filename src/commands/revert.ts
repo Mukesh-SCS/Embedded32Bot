@@ -2,7 +2,7 @@ import type { GitHubClient, RepoRef } from "../github/client.js";
 import { createRevertPullRequest } from "../github/commits.js";
 import { listOpenPullRequests } from "../github/pull-requests.js";
 import { getPullRequest } from "../github/pull-requests.js";
-import { evaluateRevert, revertBranchName, revertTitle } from "../policy/revert.js";
+import { evaluateRevert, revertTitle } from "../policy/revert.js";
 
 export async function runRevertCommand(
   octokit: GitHubClient,
@@ -28,8 +28,7 @@ export async function runRevertCommand(
     body: [
       `Reverts #${pull.number}.`,
       "",
-      `Requested via Embedded32Bot.`,
-      `Expected follow-up branch name: \`${revertBranchName(pull.number)}\`.`,
+      "Requested via Embedded32Bot.",
       "This revert PR must pass CI before merge.",
     ].join("\n"),
   });
@@ -44,12 +43,9 @@ async function findExistingRevert(
   originalTitle: string,
 ): Promise<{ number: number; title: string } | undefined> {
   const expectedTitle = revertTitle(originalTitle, prNumber);
-  const expectedBranch = revertBranchName(prNumber);
   const open = await listOpenPullRequests(octokit, target);
   return open.find(
     (candidate) =>
-      candidate.title === expectedTitle ||
-      candidate.headRef === expectedBranch ||
-      candidate.body.includes(`Reverts #${prNumber}.`),
+      candidate.title === expectedTitle || candidate.body.includes(`Reverts #${prNumber}.`),
   );
 }

@@ -10,7 +10,7 @@ export function statusLabelForState(input: {
   if (input.blocked) {
     return "status: blocked";
   }
-  if (input.checks.failed > 0) {
+  if (input.checks.required.some((check) => check.state === "failed")) {
     return "status: ci-failed";
   }
   if (input.changesRequested) {
@@ -22,7 +22,10 @@ export function statusLabelForState(input: {
   return "status: needs-review";
 }
 
-export function diffBotLabels(current: readonly string[], desired: readonly string[]): {
+export function diffBotLabels(
+  current: readonly string[],
+  desired: readonly string[],
+): {
   add: string[];
   remove: string[];
 } {

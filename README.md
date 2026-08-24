@@ -22,7 +22,7 @@ github/            thin Octokit wrappers
 GitHub API
 ```
 
-Automatic PR refresh lives in `src/services/pr-analysis.ts`. Command handlers call the same refresh path so labels and the status comment stay consistent.
+Automatic PR refresh lives in `src/services/pr-analysis.ts`. `@embedded32bot recheck` and webhook handlers use that mutating path. `@embedded32bot status` is read-only.
 
 ## Current capabilities
 
@@ -35,17 +35,19 @@ Automatic, on `Mukesh-SCS/Embedded32` pull requests:
 
 Commands:
 
-| Command | Who |
-| --- | --- |
-| `@embedded32bot help` | anyone |
-| `@embedded32bot status` | anyone |
-| `@embedded32bot recheck` | PR author or write+ |
-| `@embedded32bot label <label>` | write, maintain, or admin |
-| `@embedded32bot rerun-ci` | write, maintain, or admin |
-| `@embedded32bot merge` | maintain or admin |
-| `@embedded32bot revert` | maintain or admin |
+| Command                               | Who                       |
+| ------------------------------------- | ------------------------- |
+| `@embedded32bot help`                 | anyone                    |
+| `@embedded32bot status`               | anyone (read-only)        |
+| `@embedded32bot recheck`              | PR author or write+       |
+| `@embedded32bot label status:blocked` | write, maintain, or admin |
+| `@embedded32bot rerun-ci`             | write, maintain, or admin |
+| `@embedded32bot merge`                | maintain or admin         |
+| `@embedded32bot revert`               | maintain or admin         |
 
 Authorization uses GitHub's collaborator permission API, not comment text or `author_association`.
+
+Classification labels (`area:`, `type:`, `risk:`, `status:` except `status: blocked`, `release:`, `dependencies`) are owned by automatic refresh. The `label` command only toggles `status: blocked`.
 
 ## Requirements
 
@@ -137,7 +139,7 @@ See `render.yaml`.
 
 ## Merge policy
 
-`@embedded32bot merge` is a merge request, not an override. It refuses to merge when the PR is draft, not targeting `main`, conflicted, missing required CI, missing a human approval, blocked, or stale relative to the approved head SHA. The bot does not bypass branch protection and does not submit GitHub review approvals.
+`@embedded32bot merge` is a merge request, not an override. It refuses to merge when the PR is closed, draft, not targeting `main`, conflicted, still calculating mergeability, missing a required Embedded32 check, missing a trusted write/maintain/admin approval, blocked, or stale relative to the approved head SHA. The bot does not bypass branch protection and does not submit GitHub review approvals. External approvals do not satisfy merge policy.
 
 High-risk and critical PRs still require an explicit maintainer `merge` command. There is no silent auto-merge.
 
@@ -151,14 +153,14 @@ After a successful merge, GitHub emits `pull_request.closed`. That event refresh
 
 Declared in `app.yml`. Changing that file does not update an already-registered GitHub App.
 
-| Permission | Level | Why |
-| --- | --- | --- |
-| Metadata | Read | repository identity |
-| Issues | Write | command replies and status comments |
-| Pull requests | Write | labels, merge, revert PR |
-| Checks | Read | CI status |
-| Actions | Write | rerun failed jobs |
-| Contents | Write | revert branch/commit via GitHub |
+| Permission    | Level | Why                                                  |
+| ------------- | ----- | ---------------------------------------------------- |
+| Metadata      | Read  | repository identity                                  |
+| Issues        | Write | command replies and status comments                  |
+| Pull requests | Write | labels, merge, revert PR                             |
+| Checks        | Read  | CI status                                            |
+| Actions       | Write | rerun failed jobs                                    |
+| Contents      | Write | merge API and GraphQL revert (creates branch/commit) |
 
 Events: `issue_comment`, `pull_request`, `pull_request_review`, `check_run`, `check_suite`.
 

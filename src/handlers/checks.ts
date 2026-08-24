@@ -6,16 +6,23 @@ import { refreshPullRequest } from "../services/pr-analysis.js";
 
 export function registerCheckHandlers(app: Probot): void {
   app.on(["check_run.completed", "check_run.rerequested", "check_run.created"], async (context) => {
-    await refreshFromSha(context, context.payload.check_run.head_sha, context.payload.check_run.pull_requests);
-  });
-
-  app.on(["check_suite.completed", "check_suite.requested", "check_suite.rerequested"], async (context) => {
     await refreshFromSha(
       context,
-      context.payload.check_suite.head_sha,
-      context.payload.check_suite.pull_requests,
+      context.payload.check_run.head_sha,
+      context.payload.check_run.pull_requests,
     );
   });
+
+  app.on(
+    ["check_suite.completed", "check_suite.requested", "check_suite.rerequested"],
+    async (context) => {
+      await refreshFromSha(
+        context,
+        context.payload.check_suite.head_sha,
+        context.payload.check_suite.pull_requests,
+      );
+    },
+  );
 }
 
 async function refreshFromSha(

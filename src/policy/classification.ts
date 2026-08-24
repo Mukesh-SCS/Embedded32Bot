@@ -113,7 +113,9 @@ export function classifyPathAreas(path: string): AreaLabel[] {
   return AREA_RULES.filter((rule) => rule.test(normalized)).map((rule) => rule.area);
 }
 
-export function isDependabot(signals: Pick<ClassificationSignals, "authorLogin" | "authorType">): boolean {
+export function isDependabot(
+  signals: Pick<ClassificationSignals, "authorLogin" | "authorType">,
+): boolean {
   return signals.authorLogin === "dependabot[bot]" && signals.authorType === "Bot";
 }
 

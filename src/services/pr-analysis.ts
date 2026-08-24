@@ -8,12 +8,23 @@ import {
 import type { GitHubClient, RepoRef } from "../github/client.js";
 import { listCheckRuns, summarizeChecks } from "../github/checks.js";
 import { addIssueLabels, listIssueLabels, removeIssueLabel } from "../github/labels.js";
+import { getCollaboratorPermission } from "../github/permissions.js";
 import { getPullRequest, listPullRequestFiles } from "../github/pull-requests.js";
-import { listPullReviews, summarizeReviews } from "../github/reviews.js";
-import { classifyPullRequest, isDependabot, type Classification } from "../policy/classification.js";
+import {
+  isBotLogin,
+  listPullReviews,
+  summarizeReviews,
+  type ReviewerPermission,
+} from "../github/reviews.js";
+import {
+  classifyPullRequest,
+  isDependabot,
+  type Classification,
+} from "../policy/classification.js";
 import { diffBotLabels, statusLabelForState } from "../policy/label-sync.js";
 import { isBotManagedLabel, riskLabel, type StructuredLabel } from "../policy/labels.js";
 import { evaluateMerge, type CheckSummary, type MergeDecision } from "../policy/merge.js";
+import { formatRequiredCheckState } from "../policy/required-checks.js";
 import { validatePrTemplate, type TemplateSectionResult } from "../policy/pr-template.js";
 
 export type PullAnalysis = {
@@ -47,15 +58,18 @@ export async function analyzePullRequest(
         ref: pull.headSha,
       });
   const checks = summarizeChecks(checkRuns);
-  const reviews = summarizeReviews(await listPullReviews(octokit, target), pull.headSha);
+  const pullReviews = await listPullReviews(octokit, target);
+  const permissions = await loadReviewerPermissions(octokit, target, pullReviews);
+  const reviews = summarizeReviews(pullReviews, pull.headSha, permissions);
   const mergeDecision = evaluateMerge({
+    state: pull.state,
     draft: pull.draft,
     merged: pull.merged,
     mergeable: pull.mergeable,
     mergeableState: pull.mergeableState,
     baseBranch: pull.baseBranch,
     headSha: pull.headSha,
-    humanApprovals: reviews.humanApprovals,
+    trustedApprovals: reviews.trustedApprovals,
     changesRequested: reviews.changesRequested,
     staleApprovals: reviews.staleApprovals,
     checks,
@@ -139,7 +153,11 @@ export async function refreshPullRequest(
   target: RepoRef & { pull_number: number },
 ): Promise<PullAnalysis> {
   const analysis = await analyzePullRequest(octokit, target);
-  const labels = await syncBotLabels(octokit, { ...target, issue_number: target.pull_number }, analysis);
+  const labels = await syncBotLabels(
+    octokit,
+    { ...target, issue_number: target.pull_number },
+    analysis,
+  );
   const next = { ...analysis, labels };
   await upsertStatusComment(octokit, { ...target, issue_number: target.pull_number }, next);
   return next;
@@ -157,7 +175,7 @@ export function desiredBotLabels(analysis: PullAnalysis, current: readonly strin
   if (isDependabot(analysis.pull)) {
     labels.add("dependencies");
   }
-  if (!analysis.pull.merged) {
+  if (!analysis.pull.merged && analysis.pull.state === "open") {
     if (current.includes("status: blocked")) {
       labels.add("status: blocked");
     } else {
@@ -177,15 +195,7 @@ export function desiredBotLabels(analysis: PullAnalysis, current: readonly strin
 export function renderStatusComment(analysis: PullAnalysis): string {
   const { classification, checks, mergeDecision, template } = analysis;
   const missing = template.filter((section) => !section.hasContent).map((section) => section.name);
-  const checkLines =
-    checks.names.length === 0
-      ? ["- CI has not reported yet"]
-      : [
-          `- ${checks.passed} passed`,
-          `- ${checks.pending} pending`,
-          `- ${checks.failed} failed`,
-          ...checks.names.map((name) => `  - ${name}`),
-        ];
+  const checkLines = renderRequiredCheckLines(checks, "- ");
 
   return [
     STATUS_COMMENT_MARKER,
@@ -201,12 +211,7 @@ export function renderStatusComment(analysis: PullAnalysis): string {
     ...checkLines,
     "",
     "### Review",
-    analysis.reviews.changesRequested
-      ? "- Changes requested"
-      : analysis.reviews.humanApprovals > 0
-        ? `- ${analysis.reviews.humanApprovals} human approval(s)`
-        : "- Maintainer approval required",
-    analysis.reviews.staleApprovals ? "- Approval is stale relative to the current head SHA" : "",
+    ...renderReviewLines(analysis, "- "),
     "",
     "### Merge readiness",
     mergeDecision.allowed ? "Ready" : "Not ready",
@@ -240,16 +245,10 @@ export function renderStatusSnapshot(analysis: PullAnalysis): string {
     `- risk: ${classification.risk}`,
     "",
     "Checks:",
-    `- ${checks.passed} passed`,
-    `- ${checks.pending} pending`,
-    `- ${checks.failed} failed`,
+    ...renderRequiredCheckLines(checks, "- "),
     "",
     "Reviews:",
-    analysis.reviews.changesRequested
-      ? "- changes requested"
-      : analysis.reviews.humanApprovals > 0
-        ? `- ${analysis.reviews.humanApprovals} human approval(s)`
-        : "- maintainer approval pending",
+    ...renderReviewLines(analysis, "- "),
     "",
     "Merge readiness:",
     mergeDecision.allowed ? "READY" : "NOT READY",
@@ -257,4 +256,54 @@ export function renderStatusSnapshot(analysis: PullAnalysis): string {
       ? []
       : ["", "Reasons:", ...mergeDecision.reasons.map((reason) => `- ${reason}`)]),
   ].join("\n");
+}
+
+async function loadReviewerPermissions(
+  octokit: GitHubClient,
+  target: RepoRef,
+  reviews: readonly { userLogin: string }[],
+): Promise<Map<string, ReviewerPermission>> {
+  const permissions = new Map<string, ReviewerPermission>();
+  const logins = [
+    ...new Set(
+      reviews.map((review) => review.userLogin).filter((login) => login && !isBotLogin(login)),
+    ),
+  ];
+  for (const username of logins) {
+    permissions.set(
+      username,
+      await getCollaboratorPermission(octokit, {
+        owner: target.owner,
+        repo: target.repo,
+        username,
+      }),
+    );
+  }
+  return permissions;
+}
+
+function renderRequiredCheckLines(checks: CheckSummary, prefix: string): string[] {
+  if (checks.required.length === 0) {
+    return [`${prefix}CI has not reported yet`];
+  }
+  return checks.required.map(
+    (check) => `${prefix}${check.name}: ${formatRequiredCheckState(check.state)}`,
+  );
+}
+
+function renderReviewLines(analysis: PullAnalysis, prefix: string): string[] {
+  const lines: string[] = [];
+  if (analysis.reviews.changesRequested) {
+    lines.push(`${prefix}changes requested`);
+  } else if (analysis.reviews.trustedApprovals > 0) {
+    lines.push(`${prefix}${analysis.reviews.trustedApprovals} trusted approval(s)`);
+  } else if (analysis.reviews.untrustedApprovals > 0) {
+    lines.push(`${prefix}external approval does not satisfy merge policy`);
+  } else {
+    lines.push(`${prefix}trusted maintainer approval required`);
+  }
+  if (analysis.reviews.staleApprovals) {
+    lines.push(`${prefix}approval is stale relative to the current head SHA`);
+  }
+  return lines;
 }
