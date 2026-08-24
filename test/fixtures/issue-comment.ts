@@ -7,6 +7,9 @@ export type IssueCommentFixture = {
   action: "created";
   issue: {
     number: number;
+    user: {
+      login: string;
+    };
     pull_request?: {
       url: string;
     };
@@ -50,6 +53,9 @@ export function issueCommentCreated(overrides: IssueCommentOverrides = {}): Issu
   const repo = overrides.repo ?? TARGET_REPOSITORY;
   const issue: IssueCommentFixture["issue"] = {
     number: issueNumber,
+    user: {
+      login: "contributor",
+    },
   };
 
   if (overrides.isPullRequest !== false) {

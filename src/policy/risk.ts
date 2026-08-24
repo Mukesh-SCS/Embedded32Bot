@@ -5,3 +5,7 @@ export type RiskLevel = (typeof RISK_LEVELS)[number];
 export function isRiskLevel(value: string): value is RiskLevel {
   return (RISK_LEVELS as readonly string[]).includes(value);
 }
+
+export function compareRisk(left: RiskLevel, right: RiskLevel): number {
+  return RISK_LEVELS.indexOf(left) - RISK_LEVELS.indexOf(right);
+}

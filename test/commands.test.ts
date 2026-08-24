@@ -1,7 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { HELP_COMMAND, isHelpCommand, renderHelp } from "../src/commands/help.js";
 import { parseCommand } from "../src/commands/parse.js";
-import { BOT_MENTION } from "../src/config.js";
 
 describe("parseCommand", () => {
   test("parses @embedded32bot help", () => {
@@ -50,10 +49,14 @@ describe("parseCommand", () => {
     expect(parseCommand("@embedded32bot help\nPlease also check CI.")).toBeUndefined();
   });
 
-  test("parses an unimplemented command name without executing it", () => {
-    expect(parseCommand("@embedded32bot merge")).toEqual({
-      name: "merge",
-      args: [],
+  test("parses label arguments", () => {
+    expect(parseCommand("@embedded32bot label area:j1939")).toEqual({
+      name: "label",
+      args: ["area:j1939"],
+    });
+    expect(parseCommand("@embedded32bot label -area:j1939")).toEqual({
+      name: "label",
+      args: ["-area:j1939"],
     });
   });
 });
@@ -71,17 +74,15 @@ describe("help command", () => {
     expect(isHelpCommand({ name: "merge", args: [] })).toBe(false);
   });
 
-  test("renderHelp lists only the supported help command", () => {
+  test("renderHelp lists implemented commands", () => {
     const body = renderHelp();
-    expect(body).toBe(
-      ["Embedded32Bot commands", "", `${BOT_MENTION} help`, "    Show available commands."].join(
-        "\n",
-      ),
-    );
-    expect(body).not.toMatch(/\bmerge\b/i);
-    expect(body).not.toMatch(/\bapprove\b/i);
-    expect(body).not.toMatch(/\blabel\b/i);
-    expect(body).not.toMatch(/\breview\b/i);
-    expect(body).not.toMatch(/\brecheck\b/i);
+    expect(body).toContain("@embedded32bot help");
+    expect(body).toContain("@embedded32bot status");
+    expect(body).toContain("@embedded32bot recheck");
+    expect(body).toContain("@embedded32bot label");
+    expect(body).toContain("@embedded32bot rerun-ci");
+    expect(body).toContain("@embedded32bot merge");
+    expect(body).toContain("@embedded32bot revert");
+    expect(body).not.toMatch(/@embedded32bot approve/i);
   });
 });

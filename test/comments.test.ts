@@ -1,24 +1,19 @@
 import nock from "nock";
-import { Probot, ProbotOctokit } from "probot";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { renderHelp } from "../src/commands/help.js";
 import { TARGET_OWNER, TARGET_REPOSITORY } from "../src/config.js";
-import app from "../src/index.js";
 import { issueCommentCreated, issueCommentEvent } from "./fixtures/issue-comment.js";
+import { captureIssueComments, nockAnalysis, nockPermission } from "./helpers/github.js";
+import { createTestProbot } from "./helpers/probot.js";
+import type { Probot } from "probot";
 
-describe("issue_comment help command", () => {
+describe("issue_comment commands", () => {
   let probot: Probot;
 
   beforeEach(async () => {
+    nock.cleanAll();
     nock.disableNetConnect();
-    probot = new Probot({
-      githubToken: "test",
-      Octokit: ProbotOctokit.defaults({
-        retry: { enabled: false },
-        throttle: { enabled: false },
-      }),
-    });
-    await probot.load(app);
+    probot = await createTestProbot();
   });
 
   afterEach(() => {
@@ -39,8 +34,6 @@ describe("issue_comment help command", () => {
       .reply(201, { id: 1 });
 
     await probot.receive(issueCommentEvent("test-help", payload));
-
-    expect(github.pendingMocks()).toEqual([]);
     expect(github.isDone()).toBe(true);
   });
 
@@ -55,13 +48,39 @@ describe("issue_comment help command", () => {
     );
   });
 
-  test("does not comment for an unimplemented command", async () => {
+  test("replies to unknown commands", async () => {
+    const github = nock("https://api.github.com")
+      .post(
+        `/repos/${TARGET_OWNER}/${TARGET_REPOSITORY}/issues/42/comments`,
+        (body: { body?: string }) => {
+          expect(body.body).toContain("Unknown command `frobnicate`");
+          return true;
+        },
+      )
+      .reply(201, { id: 2 });
+
     await probot.receive(
-      issueCommentEvent(
-        "test-merge-command",
-        issueCommentCreated({ body: "@embedded32bot merge" }),
-      ),
+      issueCommentEvent("test-unknown", issueCommentCreated({ body: "@embedded32bot frobnicate" })),
     );
+    expect(github.isDone()).toBe(true);
+  });
+
+  test("rejects unauthorized merge without calling the merge API", async () => {
+    nockPermission("contributor", "read");
+    const github = nock("https://api.github.com")
+      .post(
+        `/repos/${TARGET_OWNER}/${TARGET_REPOSITORY}/issues/42/comments`,
+        (body: { body?: string }) => {
+          expect(body.body).toContain("requires maintain or admin");
+          return true;
+        },
+      )
+      .reply(201, { id: 3 });
+
+    await probot.receive(
+      issueCommentEvent("test-merge-denied", issueCommentCreated({ body: "@embedded32bot merge" })),
+    );
+    expect(github.isDone()).toBe(true);
   });
 
   test("does not comment on a non-pull-request issue", async () => {
@@ -72,5 +91,16 @@ describe("issue_comment help command", () => {
 
   test("does not comment when the sender is a bot", async () => {
     await probot.receive(issueCommentEvent("test-bot", issueCommentCreated({ senderType: "Bot" })));
+  });
+
+  test("status refreshes analysis and replies with a snapshot", async () => {
+    nockPermission("contributor", "write");
+    nockAnalysis();
+    const bodies = captureIssueComments();
+
+    await probot.receive(
+      issueCommentEvent("test-status", issueCommentCreated({ body: "@embedded32bot status" })),
+    );
+    expect(bodies.some((body) => body.includes("Embedded32Bot status"))).toBe(true);
   });
 });

@@ -63,3 +63,47 @@ export const STRUCTURED_LABELS: readonly StructuredLabel[] = [
   ...RELEASE_LABELS,
   ...COMPATIBILITY_LABELS,
 ];
+
+const BOT_MANAGED_PREFIXES = ["area:", "type:", "risk:", "status:", "release:"] as const;
+
+export function isBotManagedLabel(name: string): boolean {
+  const normalized = name.trim().toLowerCase();
+  return (
+    BOT_MANAGED_PREFIXES.some((prefix) => normalized.startsWith(prefix)) ||
+    normalized === "dependencies"
+  );
+}
+
+export function canonicalizeLabel(raw: string): StructuredLabel | undefined {
+  const trimmed = raw.trim();
+  if (STRUCTURED_LABELS.includes(trimmed as StructuredLabel)) {
+    return trimmed as StructuredLabel;
+  }
+
+  const spaced = trimmed.replace(/^([A-Za-z]+):(\S)/, "$1: $2");
+  if (STRUCTURED_LABELS.includes(spaced as StructuredLabel)) {
+    return spaced as StructuredLabel;
+  }
+
+  return undefined;
+}
+
+export function parseLabelArgument(raw: string): { action: "add" | "remove"; label: StructuredLabel } | undefined {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+
+  const action = trimmed.startsWith("-") ? "remove" : "add";
+  const value = trimmed.replace(/^[-+]/, "").trim();
+  const label = canonicalizeLabel(value);
+  if (!label) {
+    return undefined;
+  }
+
+  return { action, label };
+}
+
+export function riskLabel(level: "low" | "medium" | "high" | "critical"): RiskLabel {
+  return `risk: ${level}`;
+}
