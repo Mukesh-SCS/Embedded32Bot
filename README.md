@@ -51,7 +51,7 @@ Classification labels (`area:`, `type:`, `risk:`, `status:` except `status: bloc
 
 ## Requirements
 
-- Node.js 20.18–22.x (CI uses 20.18.0 and 22.23.2; production is pinned to 22.23.2 via `.node-version` and `render.yaml`)
+- Node.js 20.19–22.x (CI uses 20.19.0 and 22.23.2; production is pinned to 22.23.2 via `.node-version` and `render.yaml`)
 - npm
 - GitHub App credentials
 
