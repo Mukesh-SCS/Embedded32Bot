@@ -1,0 +1,16 @@
+# GitHub App Manifest used by Probot's local setup flow.
+# Editing this file does not change an already-registered GitHub App.
+# https://docs.github.com/apps/sharing-github-apps/registering-a-github-app-from-a-manifest
+
+name: Embedded32Bot
+url: https://github.com/Mukesh-SCS/Embedded32Bot
+description: Maintenance bot for the Embedded32 project.
+public: false
+
+default_events:
+  - issue_comment
+
+default_permissions:
+  metadata: read
+  issues: write
+  pull_requests: read

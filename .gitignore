@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Build output
+lib/
+*.tsbuildinfo
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Logs and coverage
+logs/
+*.log
+coverage/
+.nyc_output/
+
+# OS
+.DS_Store
+Thumbs.db

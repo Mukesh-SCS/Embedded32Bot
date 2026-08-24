@@ -1,0 +1,50 @@
+{
+  "name": "embedded32-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GitHub App that automates maintenance for the Embedded32 project.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=20.18.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Mukesh-SCS/Embedded32Bot.git"
+  },
+  "homepage": "https://github.com/Mukesh-SCS/Embedded32Bot",
+  "bugs": {
+    "url": "https://github.com/Mukesh-SCS/Embedded32Bot/issues"
+  },
+  "keywords": [
+    "probot",
+    "github-app",
+    "embedded32"
+  ],
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "npm run build && probot run ./lib/index.js",
+    "start": "probot run ./lib/index.js",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "dependencies": {
+    "probot": "^14.3.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.15.0",
+    "eslint": "^10.9.0",
+    "eslint-config-prettier": "^10.1.8",
+    "nock": "^14.0.5",
+    "prettier": "^3.6.2",
+    "smee-client": "^5.0.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.46.0",
+    "vitest": "^4.0.0"
+  }
+}
